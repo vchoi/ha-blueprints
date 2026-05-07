@@ -1,0 +1,89 @@
+blueprint:
+  name: "Luz por sensor de porta com timeout (multi-sensor)"
+  description: >
+    Acende uma luz quando qualquer um dos sensores configurados for ativado (lógica OR).
+    Apaga imediatamente quando todos os sensores voltarem ao estado inativo.
+    Se algum sensor ficar ativo por mais tempo que o timeout configurado, a luz é apagada.
+  domain: automation
+  input:
+    door_sensors:
+      name: Sensores de porta
+      description: Um ou mais sensores binários. A luz acende se QUALQUER um estiver ativo (OR).
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+
+    light_target:
+      name: Luz
+      description: Luz (ou grupo de luzes) a ser controlada
+      selector:
+        target:
+          entity:
+            domain: light
+
+    timeout_minutes:
+      name: Timeout — sensor esquecido ativo
+      description: Tempo em minutos para apagar a luz caso algum sensor fique ativo
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: minutos
+          mode: slider
+
+variables:
+  door_sensors: !input door_sensors
+  timeout_minutes: !input timeout_minutes
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input door_sensors
+    to: "on"
+    id: ativou
+
+  - platform: state
+    entity_id: !input door_sensors
+    to: "off"
+    id: desativou
+
+  - platform: state
+    entity_id: !input door_sensors
+    to: "on"
+    for:
+      minutes: !input timeout_minutes
+    id: timeout
+
+action:
+  - choose:
+
+      - conditions:
+          - condition: trigger
+            id: ativou
+        sequence:
+          - action: light.turn_on
+            target: !input light_target
+
+      - conditions:
+          - condition: trigger
+            id: desativou
+          - condition: template
+            value_template: >
+              {{ expand(door_sensors)
+                 | selectattr('state', 'eq', 'on')
+                 | list
+                 | count == 0 }}
+        sequence:
+          - action: light.turn_off
+            target: !input light_target
+
+      - conditions:
+          - condition: trigger
+            id: timeout
+        sequence:
+          - action: light.turn_off
+            target: !input light_target

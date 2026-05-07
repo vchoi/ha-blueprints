@@ -1,0 +1,20 @@
+blueprint:
+  name: "Desligar luzes exceto uma"
+  domain: script
+  input:
+    luz_excecao:
+      name: Luz a manter acesa
+      selector:
+        entity:
+          domain: light
+          multiple: true
+
+sequence:
+  - action: light.turn_off
+    target:
+      entity_id: >
+        {% set excluir = luz_excecao %}
+        {{ states.light
+           | rejectattr('entity_id', 'in', excluir)
+           | map(attribute='entity_id')
+           | list }}

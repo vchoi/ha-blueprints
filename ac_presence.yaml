@@ -1,0 +1,105 @@
+blueprint:
+  name: Ar Condicionado por Múltiplos Sensores/Luzes
+  description: >
+    Monitora uma lista de dispositivos diretamente.
+    Liga o AC quando PELO MENOS UM dispositivo fica ativo por 1 minuto. 
+    Desliga quando TODOS ficam inativos por 2 minutos.
+  domain: automation
+  input:
+    trigger_entities:
+      name: Sensores e Luzes
+      description: Selecione todas as entidades que devem ser monitoradas.
+      selector:
+        entity:
+          multiple: true
+          domain:
+            - binary_sensor
+            - light
+            - input_boolean
+    climate_target:
+      name: Ar Condicionado
+      description: O ar condicionado a ser controlado.
+      selector:
+        target:
+          entity:
+            domain: climate
+    temp_setpoint:
+      name: Temperatura alvo
+      description: "Temperatura para ligar (Padrão: 26)."
+      default: 26
+      selector:
+        number:
+          min: 16
+          max: 30
+          unit_of_measurement: °C
+    fan_mode:
+      name: Modo de Ventilação
+      description: "A velocidade do ventilador (Padrão: low)."
+      default: low
+      selector:
+        text:
+    time_on:
+      name: Tempo para Ligar
+      description: Tempo contínuo em que pelo menos UM deve ficar ligado.
+      default: 1
+      selector:
+        number:
+          min: 0
+          max: 60
+          unit_of_measurement: minutos
+    time_off:
+      name: Tempo para Desligar
+      description: Tempo contínuo em que TODOS devem ficar desligados.
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 60
+          unit_of_measurement: minutos
+
+mode: restart
+
+# Passamos a lista de dispositivos para uma variável interna
+trigger_variables:
+  sensor_list: !input trigger_entities
+
+trigger:
+  # Gatilho de LIGAR: Conta se existe algum sensor (mais de 0) com estado 'on'
+  - platform: template
+    value_template: "{{ expand(sensor_list) | selectattr('state', 'eq', 'on') | list | length > 0 }}"
+    for:
+      minutes: !input time_on
+    id: 'turn_on'
+    
+  # Gatilho de DESLIGAR: Confere se a contagem de sensores com estado 'on' é igual a 0
+  - platform: template
+    value_template: "{{ expand(sensor_list) | selectattr('state', 'eq', 'on') | list | length == 0 }}"
+    for:
+      minutes: !input time_off
+    id: 'turn_off'
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: 'turn_on'
+        sequence:
+          - service: climate.set_hvac_mode
+            target: !input climate_target
+            data:
+              hvac_mode: cool
+          - service: climate.set_temperature
+            target: !input climate_target
+            data:
+              temperature: !input temp_setpoint
+          - service: climate.set_fan_mode
+            target: !input climate_target
+            data:
+              fan_mode: !input fan_mode
+              
+      - conditions:
+          - condition: trigger
+            id: 'turn_off'
+        sequence:
+          - service: climate.turn_off
+            target: !input climate_target
